@@ -1,9 +1,10 @@
 package main
 
+import "C"
 import (
+	"OpenGL/camera"
 	"OpenGL/shaders"
 	"fmt"
-	"math"
 	"runtime"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -89,7 +90,7 @@ func main() {
 	gl.VertexAttribPointer(1, 3, gl.FLOAT, false, 6*4, gl.PtrOffset(3*4))
 
 	// Shader program
-	program := shaders.NewProgram(vertexShaderSource, fragmentShaderSource)
+	program := shaders.NewProgram(shaders.VertexShaderSource, shaders.FragmentShaderSource)
 	gl.UseProgram(program)
 
 	// Uniform locations
@@ -102,84 +103,25 @@ func main() {
 
 	proj := mgl32.Perspective(mgl32.DegToRad(45), float32(fbWidth)/float32(fbHeight), 0.1, 100.0)
 
-	cameraPos := mgl32.Vec3{0, 0, 5}    // inizialmente 5 unità davanti
-	cameraFront := mgl32.Vec3{0, 0, -1} // direzione iniziale
-	cameraUp := mgl32.Vec3{0, 1, 0}     // asse Y come "up"
+	cam := camera.New(
+		mgl32.Vec3{0, 0, 5},  // inizialmente 5 unità davanti
+		mgl32.Vec3{0, 0, -1}, // direzione iniziale
+		mgl32.Vec3{0, 1, 0},  // asse Y come "up"
+	)
 
-	var yaw float32 = -90.0 // guardo lungo -Z
-	var pitch float32 = 0.0
-	var lastX float64 = 400
-	var lastY float64 = 300
-	var firstMouse = true
-
-	var sensitivity float32 = 0.1
-
-	window.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
-
-	window.SetCursorPosCallback(func(w *glfw.Window, xpos float64, ypos float64) {
-		if firstMouse {
-			lastX = xpos
-			lastY = ypos
-			firstMouse = false
-		}
-
-		xoffset := float32(xpos-lastX) * sensitivity
-		yoffset := float32(lastY-ypos) * sensitivity // inverti Y
-		lastX = xpos
-		lastY = ypos
-
-		yaw += xoffset
-		pitch += yoffset
-
-		if pitch > 89.0 {
-			pitch = 89.0
-		}
-		if pitch < -89.0 {
-			pitch = -89.0
-		}
-
-		front := mgl32.Vec3{
-			float32(math.Cos(float64(mgl32.DegToRad(yaw))) * math.Cos(float64(mgl32.DegToRad(pitch)))),
-			float32(math.Sin(float64(mgl32.DegToRad(pitch)))),
-			float32(math.Sin(float64(mgl32.DegToRad(yaw))) * math.Cos(float64(mgl32.DegToRad(pitch)))),
-		}
-		cameraFront = front.Normalize()
-	})
+	cam.AttachMouse(window)
 
 	gl.Enable(gl.DEPTH_TEST)
-
-	//start := time.Now()
-	//rotationPeriod := 3.0 // secondi per giro completo
 
 	// Loop principale
 	for !window.ShouldClose() {
 		gl.ClearColor(0.2, 0.3, 0.3, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		if window.GetKey(glfw.KeyW) == glfw.Press {
-			cameraPos = cameraPos.Add(cameraFront.Mul(0.05)) // muovi avanti
-		}
-		if window.GetKey(glfw.KeyS) == glfw.Press {
-			cameraPos = cameraPos.Sub(cameraFront.Mul(0.05)) // muovi indietro
-		}
-		if window.GetKey(glfw.KeyA) == glfw.Press {
-			cameraPos = cameraPos.Sub(cameraFront.Cross(cameraUp).Normalize().Mul(0.05)) // sinistra
-		}
-		if window.GetKey(glfw.KeyD) == glfw.Press {
-			cameraPos = cameraPos.Add(cameraFront.Cross(cameraUp).Normalize().Mul(0.05)) // destra
-		}
-		if window.GetKey(glfw.KeyZ) == glfw.Press {
-			cameraPos = cameraPos.Sub(cameraUp.Mul(0.05))
-		}
-		if window.GetKey(glfw.KeyX) == glfw.Press {
-			cameraPos = cameraPos.Add(cameraUp.Mul(0.05))
-		}
-		if window.GetKey(glfw.KeyEscape) == glfw.Press {
-			window.SetShouldClose(true)
-		}
+		cam.ProcessKeyboard(window)
 
 		// Matrici di base
-		view := mgl32.LookAtV(cameraPos, cameraPos.Add(cameraFront), cameraUp) // sposta la camera
+		view := cam.GetViewMatrix() // sposta la camera
 		gl.UniformMatrix4fv(viewLoc, 1, false, &view[0])
 
 		model := mgl32.HomogRotate3D(0, mgl32.Vec3{1.0, 1.0, 0.0}.Normalize())
@@ -196,30 +138,3 @@ func main() {
 		glfw.PollEvents()
 	}
 }
-
-var vertexShaderSource = `
-#version 410 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aColor;
-
-out vec3 ourColor;
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
-void main() {
-	gl_Position = projection * view * model * vec4(aPos, 1.0);
-	ourColor = aColor;
-}
-` + "\x00"
-
-var fragmentShaderSource = `
-#version 410 core
-in vec3 ourColor;
-out vec4 FragColor;
-
-void main() {
-	FragColor = vec4(ourColor, 1.0);
-}
-` + "\x00"
